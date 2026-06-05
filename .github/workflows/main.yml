@@ -1,0 +1,181 @@
+name: Build Password Generator APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: تحميل الكود
+        uses: actions/checkout@v4
+      
+      - name: فك ضغط المشروع
+        run: |
+          unzip "ai-academic-writing-app.zip" -d project/
+          echo "محتوى المشروع:"
+          ls -la project/
+      
+      - name: إعداد Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: تثبيت الاعتماديات
+        run: |
+          cd project
+          npm install
+      
+      - name: بناء المشروع
+        run: |
+          cd project
+          npm run build
+          echo "محتوى مجلد dist:"
+          ls -la dist/
+      
+      - name: إعداد Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: تثبيت Android Build Tools
+        run: |
+          mkdir -p $HOME/android-sdk/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip -q commandlinetools-linux-9477386_latest.zip
+          mv cmdline-tools $HOME/android-sdk/cmdline-tools/latest
+          
+          export ANDROID_HOME=$HOME/android-sdk
+          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
+          
+          yes | sdkmanager --sdk_root=$ANDROID_HOME --licenses > /dev/null 2>&1 || true
+          sdkmanager --sdk_root=$ANDROID_HOME "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/android-sdk/build-tools/34.0.0" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
+      
+      - name: إنشاء ملفات المشروع
+        run: |
+          mkdir -p MyApp/res/values
+          
+          cat > MyApp/AndroidManifest.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.academic.writing">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:allowBackup="true"
+                  android:label="Academic Writing"
+                  android:usesCleartextTraffic="true"
+                  android:supportsRtl="true">
+                  <activity
+                      android:name="com.academic.writing.MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          
+          cat > MyApp/res/values/strings.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">Academic Writing</string>
+          </resources>
+          EOF
+          
+          cat > MyApp/MainActivity.java << 'EOF'
+          package com.academic.writing;
+          
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.webkit.WebSettings;
+          
+          public class MainActivity extends Activity {
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  
+                  WebView webView = new WebView(this);
+                  webView.setWebViewClient(new WebViewClient());
+                  WebSettings settings = webView.getSettings();
+                  settings.setJavaScriptEnabled(true);
+                  settings.setAllowFileAccess(true);
+                  settings.setDomStorageEnabled(true);
+                  
+                  webView.loadUrl("file:///android_asset/index.html");
+                  setContentView(webView);
+              }
+          }
+          EOF
+      
+      - name: بناء APK يدوياً (بدون Gradle)
+        run: |
+          BUILD_TOOLS=$HOME/android-sdk/build-tools/34.0.0
+          PLATFORM=$HOME/android-sdk/platforms/android-34
+          ASSETS_DIR=MyApp/assets
+          BUILD_DIR=MyApp/build
+          
+          mkdir -p $ASSETS_DIR $BUILD_DIR/classes $BUILD_DIR/apk
+          
+          cp -r project/dist/* $ASSETS_DIR/
+          echo "ملفات assets:"
+          ls -la $ASSETS_DIR/
+          
+          # إنشاء R.java
+          mkdir -p $BUILD_DIR/gen
+          $BUILD_TOOLS/aapt package -f -m \
+            -J $BUILD_DIR/gen \
+            -M MyApp/AndroidManifest.xml \
+            -S MyApp/res \
+            -I $PLATFORM/android.jar \
+            -A $ASSETS_DIR \
+            --auto-add-overlay
+          
+          # تجميع Java
+          javac -source 1.8 -target 1.8 \
+            -d $BUILD_DIR/classes \
+            -cp $PLATFORM/android.jar:$BUILD_DIR/gen \
+            MyApp/MainActivity.java \
+            $BUILD_DIR/gen/com/academic/writing/R.java
+          
+          # تحويل إلى dex
+          $BUILD_TOOLS/d8 \
+            --lib $PLATFORM/android.jar \
+            --output $BUILD_DIR/apk \
+            $BUILD_DIR/classes/com/academic/writing/*.class
+          
+          # تجميع APK
+          $BUILD_TOOLS/aapt package -f -m \
+            -F $BUILD_DIR/app-unsigned.apk \
+            -M MyApp/AndroidManifest.xml \
+            -S MyApp/res \
+            -I $PLATFORM/android.jar \
+            -A $ASSETS_DIR \
+            --auto-add-overlay
+          
+          # إضافة classes.dex
+          cd $BUILD_DIR/apk
+          zip -r ../app-unsigned.apk classes.dex
+          cd ../../..
+          
+          cp $BUILD_DIR/app-unsigned.apk academic-writing.apk
+          echo "✅ APK جاهز:"
+          ls -lh academic-writing.apk
+      
+      - name: رفع APK للتحميل
+        uses: actions/upload-artifact@v4
+        with:
+          name: Academic-Writing-APK
+          path: academic-writing.apk
