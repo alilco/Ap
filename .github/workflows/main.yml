@@ -53,22 +53,22 @@ jobs:
           export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
           
           yes | sdkmanager --sdk_root=$ANDROID_HOME --licenses > /dev/null 2>&1 || true
-          sdkmanager --sdk_root=$ANDROID_HOME "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager --sdk_root=$ANDROID_HOME "platform-tools" "platforms;android-35" "build-tools;35.0.0"
           
           echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
-          echo "$HOME/android-sdk/build-tools/34.0.0" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/build-tools/35.0.0" >> $GITHUB_PATH
           echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
       
       - name: إنشاء ملفات المشروع
         run: |
           mkdir -p MyApp/res/values
-          mkdir -p MyApp/res/drawable
           
           cat > MyApp/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               package="com.ai.academic.writing">
               
+              <!-- فقط صلاحية الإنترنت - بدون تخزين أو هاتف -->
               <uses-permission android:name="android.permission.INTERNET" />
               
               <!-- دعم جميع الشاشات -->
@@ -82,6 +82,7 @@ jobs:
               <application
                   android:allowBackup="true"
                   android:label="AI Academic Writing"
+                  android:icon="@drawable/ic_launcher"
                   android:usesCleartextTraffic="true"
                   android:supportsRtl="true"
                   android:hardwareAccelerated="true">
@@ -130,7 +131,7 @@ jobs:
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
                   
-                  // ملء الشاشة الكامل للأجهزة الحديثة
+                  // ملء الشاشة الكامل
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                       getWindow().setDecorFitsSystemWindows(false);
                       WindowInsetsController controller = getWindow().getInsetsController();
@@ -140,13 +141,8 @@ jobs:
                               WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                           );
                       }
-                  } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                      getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-                      getWindow().setStatusBarColor(Color.parseColor("#1a1a2e"));
-                      getWindow().setNavigationBarColor(Color.parseColor("#0f3460"));
                   }
                   
-                  // إخفاء شريط العنوان
                   if (getActionBar() != null) {
                       getActionBar().hide();
                   }
@@ -159,25 +155,18 @@ jobs:
                   settings.setJavaScriptEnabled(true);
                   settings.setAllowFileAccess(true);
                   settings.setDomStorageEnabled(true);
-                  
-                  // إعدادات الشاشة الحديثة
                   settings.setLoadWithOverviewMode(true);
                   settings.setUseWideViewPort(true);
                   settings.setSupportZoom(false);
                   settings.setBuiltInZoomControls(false);
                   settings.setDisplayZoomControls(false);
                   settings.setDefaultTextEncodingName("utf-8");
-                  
-                  // دعم الفيديو والصوت
                   settings.setMediaPlaybackRequiresUserGesture(false);
                   
-                  // تسريع الأجهزة
                   webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-                  
                   webView.loadUrl("file:///android_asset/index.html");
                   setContentView(webView);
                   
-                  // دعم display cutout (النوتش)
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                       getWindow().getAttributes().layoutInDisplayCutoutMode = 
                           WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
@@ -187,39 +176,29 @@ jobs:
               @Override
               public void onWindowFocusChanged(boolean hasFocus) {
                   super.onWindowFocusChanged(hasFocus);
-                  if (hasFocus) {
-                      hideSystemUI();
-                  }
-              }
-              
-              private void hideSystemUI() {
-                  View decorView = getWindow().getDecorView();
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                  if (hasFocus && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                       WindowInsetsController controller = getWindow().getInsetsController();
                       if (controller != null) {
                           controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                          controller.setSystemBarsBehavior(
-                              WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                          );
                       }
-                  } else {
-                      decorView.setSystemUiVisibility(
-                          View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                          | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                          | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                          | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                          | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                          | View.SYSTEM_UI_FLAG_FULLSCREEN
-                      );
                   }
               }
           }
           EOF
       
-      - name: بناء APK يدوياً (بدون Gradle)
+      - name: إنشاء أيقونة
         run: |
-          BUILD_TOOLS=$HOME/android-sdk/build-tools/34.0.0
-          PLATFORM=$HOME/android-sdk/platforms/android-34
+          sudo apt-get install -y imagemagick
+          mkdir -p MyApp/res/drawable
+          convert -size 512x512 xc:'#1a1a2e' \
+            -fill '#e94560' -pointsize 220 \
+            -gravity center -annotate 0 "📝" \
+            MyApp/res/drawable/ic_launcher.png
+      
+      - name: بناء APK يدوياً مع targetSdk 35
+        run: |
+          BUILD_TOOLS=$HOME/android-sdk/build-tools/35.0.0
+          PLATFORM=$HOME/android-sdk/platforms/android-35
           ASSETS_DIR=MyApp/assets
           BUILD_DIR=MyApp/build
           
@@ -237,7 +216,9 @@ jobs:
             -S MyApp/res \
             -I $PLATFORM/android.jar \
             -A $ASSETS_DIR \
-            --auto-add-overlay
+            --auto-add-overlay \
+            --target-sdk-version 35 \
+            --min-sdk-version 21
           
           # تجميع Java
           javac -source 1.8 -target 1.8 \
@@ -252,22 +233,31 @@ jobs:
             --output $BUILD_DIR/apk \
             $BUILD_DIR/classes/com/ai/academic/writing/*.class
           
-          # تجميع APK
+          # تجميع APK مع targetSdkVersion 35
           $BUILD_TOOLS/aapt package -f -m \
             -F $BUILD_DIR/app-unsigned.apk \
             -M MyApp/AndroidManifest.xml \
             -S MyApp/res \
             -I $PLATFORM/android.jar \
             -A $ASSETS_DIR \
-            --auto-add-overlay
+            --auto-add-overlay \
+            --target-sdk-version 35 \
+            --min-sdk-version 21
           
           # إضافة classes.dex
           cd $BUILD_DIR/apk
           zip -r ../app-unsigned.apk classes.dex
           cd ../../..
           
+          # توقيع APK تلقائياً بمفتاح debug
+          $BUILD_TOOLS/apksigner sign \
+            --ks $HOME/.android/debug.keystore \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            $BUILD_DIR/app-unsigned.apk
+          
           cp $BUILD_DIR/app-unsigned.apk ai-academic-writing.apk
-          echo "✅ APK جاهز:"
+          echo "✅ APK جاهز وموقع:"
           ls -lh ai-academic-writing.apk
       
       - name: رفع APK للتحميل
