@@ -68,10 +68,8 @@ jobs:
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               package="com.ai.academic.writing">
               
-              <!-- فقط صلاحية الإنترنت - بدون تخزين أو هاتف -->
               <uses-permission android:name="android.permission.INTERNET" />
               
-              <!-- دعم جميع الشاشات -->
               <supports-screens
                   android:smallScreens="true"
                   android:normalScreens="true"
@@ -124,14 +122,12 @@ jobs:
           import android.view.WindowInsets;
           import android.view.WindowInsetsController;
           import android.os.Build;
-          import android.graphics.Color;
           
           public class MainActivity extends Activity {
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
                   
-                  // ملء الشاشة الكامل
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                       getWindow().setDecorFitsSystemWindows(false);
                       WindowInsetsController controller = getWindow().getInsetsController();
@@ -160,7 +156,6 @@ jobs:
                   settings.setSupportZoom(false);
                   settings.setBuiltInZoomControls(false);
                   settings.setDisplayZoomControls(false);
-                  settings.setDefaultTextEncodingName("utf-8");
                   settings.setMediaPlaybackRequiresUserGesture(false);
                   
                   webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
@@ -170,17 +165,6 @@ jobs:
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                       getWindow().getAttributes().layoutInDisplayCutoutMode = 
                           WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-                  }
-              }
-              
-              @Override
-              public void onWindowFocusChanged(boolean hasFocus) {
-                  super.onWindowFocusChanged(hasFocus);
-                  if (hasFocus && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                      WindowInsetsController controller = getWindow().getInsetsController();
-                      if (controller != null) {
-                          controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                      }
                   }
               }
           }
@@ -194,6 +178,18 @@ jobs:
             -fill '#e94560' -pointsize 220 \
             -gravity center -annotate 0 "📝" \
             MyApp/res/drawable/ic_launcher.png
+      
+      - name: إنشاء مفتاح توقيع
+        run: |
+          keytool -genkey -v \
+            -keystore release.keystore \
+            -alias aiwriting \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass android123 \
+            -keypass android123 \
+            -dname "CN=AI Academic Writing, OU=Dev, O=AI, L=City, ST=State, C=US"
       
       - name: بناء APK يدوياً مع targetSdk 35
         run: |
@@ -233,7 +229,7 @@ jobs:
             --output $BUILD_DIR/apk \
             $BUILD_DIR/classes/com/ai/academic/writing/*.class
           
-          # تجميع APK مع targetSdkVersion 35
+          # تجميع APK غير موقع
           $BUILD_TOOLS/aapt package -f -m \
             -F $BUILD_DIR/app-unsigned.apk \
             -M MyApp/AndroidManifest.xml \
@@ -249,14 +245,17 @@ jobs:
           zip -r ../app-unsigned.apk classes.dex
           cd ../../..
           
-          # توقيع APK تلقائياً بمفتاح debug
+          # توقيع APK بالمفتاح الجديد
           $BUILD_TOOLS/apksigner sign \
-            --ks $HOME/.android/debug.keystore \
-            --ks-pass pass:android \
-            --key-pass pass:android \
+            --ks release.keystore \
+            --ks-key-alias aiwriting \
+            --ks-pass pass:android123 \
+            --key-pass pass:android123 \
             $BUILD_DIR/app-unsigned.apk
           
-          cp $BUILD_DIR/app-unsigned.apk ai-academic-writing.apk
+          # محاذاة APK
+          $BUILD_TOOLS/zipalign -f 4 $BUILD_DIR/app-unsigned.apk ai-academic-writing.apk
+          
           echo "✅ APK جاهز وموقع:"
           ls -lh ai-academic-writing.apk
       
