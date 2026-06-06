@@ -1,4 +1,4 @@
-name: Build Password Generator APK
+name: Build AI Academic Writing App APK
 
 on:
   push:
@@ -53,30 +53,38 @@ jobs:
           export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
           
           yes | sdkmanager --sdk_root=$ANDROID_HOME --licenses > /dev/null 2>&1 || true
-          sdkmanager --sdk_root=$ANDROID_HOME "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager --sdk_root=$ANDROID_HOME "platform-tools" "platforms;android-35" "build-tools;35.0.0"
           
           echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
-          echo "$HOME/android-sdk/build-tools/34.0.0" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/build-tools/35.0.0" >> $GITHUB_PATH
           echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
       
       - name: إنشاء ملفات المشروع
         run: |
           mkdir -p MyApp/res/values
+          mkdir -p MyApp/res/drawable
           
           cat > MyApp/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              package="com.academic.writing">
+              package="com.ai.academic.writing">
+              
               <uses-permission android:name="android.permission.INTERNET" />
+              
               <application
                   android:allowBackup="true"
-                  android:label="Academic Writing"
+                  android:label="AI Academic Writing"
                   android:usesCleartextTraffic="true"
-                  android:supportsRtl="true">
+                  android:supportsRtl="true"
+                  android:hardwareAccelerated="true">
+                  
                   <activity
-                      android:name="com.academic.writing.MainActivity"
+                      android:name="com.ai.academic.writing.MainActivity"
                       android:exported="true"
-                      android:configChanges="orientation|screenSize">
+                      android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+                      android:resizeableActivity="true"
+                      android:windowSoftInputMode="adjustResize"
+                      android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
@@ -89,23 +97,39 @@ jobs:
           cat > MyApp/res/values/strings.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
-              <string name="app_name">Academic Writing</string>
+              <string name="app_name">AI Academic Writing</string>
           </resources>
           EOF
           
           cat > MyApp/MainActivity.java << 'EOF'
-          package com.academic.writing;
+          package com.ai.academic.writing;
           
           import android.app.Activity;
           import android.os.Bundle;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
           import android.webkit.WebSettings;
+          import android.view.View;
+          import android.view.WindowManager;
+          import android.os.Build;
+          import android.graphics.Color;
           
           public class MainActivity extends Activity {
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
+                  
+                  // جعل شريط التنقل شفاف وملء الشاشة
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                      getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+                      getWindow().setStatusBarColor(Color.parseColor("#1a1a2e"));
+                      getWindow().setNavigationBarColor(Color.parseColor("#0f3460"));
+                  }
+                  
+                  // إخفاء شريط العنوان
+                  if (getActionBar() != null) {
+                      getActionBar().hide();
+                  }
                   
                   WebView webView = new WebView(this);
                   webView.setWebViewClient(new WebViewClient());
@@ -114,16 +138,32 @@ jobs:
                   settings.setAllowFileAccess(true);
                   settings.setDomStorageEnabled(true);
                   
+                  // دعم الشاشات الحديثة
+                  settings.setLoadWithOverviewMode(true);
+                  settings.setUseWideViewPort(true);
+                  settings.setSupportZoom(false);
+                  settings.setBuiltInZoomControls(false);
+                  settings.setDisplayZoomControls(false);
+                  
+                  // تسريع الأجهزة
+                  webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+                  
                   webView.loadUrl("file:///android_asset/index.html");
                   setContentView(webView);
+                  
+                  // ملء الشاشة الكاملة للأجهزة الحديثة
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                      getWindow().getAttributes().layoutInDisplayCutoutMode = 
+                          WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                  }
               }
           }
           EOF
       
       - name: بناء APK يدوياً (بدون Gradle)
         run: |
-          BUILD_TOOLS=$HOME/android-sdk/build-tools/34.0.0
-          PLATFORM=$HOME/android-sdk/platforms/android-34
+          BUILD_TOOLS=$HOME/android-sdk/build-tools/35.0.0
+          PLATFORM=$HOME/android-sdk/platforms/android-35
           ASSETS_DIR=MyApp/assets
           BUILD_DIR=MyApp/build
           
@@ -148,13 +188,13 @@ jobs:
             -d $BUILD_DIR/classes \
             -cp $PLATFORM/android.jar:$BUILD_DIR/gen \
             MyApp/MainActivity.java \
-            $BUILD_DIR/gen/com/academic/writing/R.java
+            $BUILD_DIR/gen/com/ai/academic/writing/R.java
           
           # تحويل إلى dex
           $BUILD_TOOLS/d8 \
             --lib $PLATFORM/android.jar \
             --output $BUILD_DIR/apk \
-            $BUILD_DIR/classes/com/academic/writing/*.class
+            $BUILD_DIR/classes/com/ai/academic/writing/*.class
           
           # تجميع APK
           $BUILD_TOOLS/aapt package -f -m \
@@ -170,12 +210,12 @@ jobs:
           zip -r ../app-unsigned.apk classes.dex
           cd ../../..
           
-          cp $BUILD_DIR/app-unsigned.apk academic-writing.apk
+          cp $BUILD_DIR/app-unsigned.apk ai-academic-writing.apk
           echo "✅ APK جاهز:"
-          ls -lh academic-writing.apk
+          ls -lh ai-academic-writing.apk
       
       - name: رفع APK للتحميل
         uses: actions/upload-artifact@v4
         with:
-          name: Academic-Writing-APK
-          path: academic-writing.apk
+          name: AI-Academic-Writing-APK
+          path: ai-academic-writing.apk
